@@ -1,0 +1,30 @@
+services:
+  # Container do Banco de Dados
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: gsan_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Container do Servidor de Produção/Cliente (Com SSH pronto de fábrica)
+  app_server:
+    image: rastasheep/ubuntu-sshd:18.04
+    container_name: gsan_app_server
+    restart: always
+    ports:
+      - "2222:22"
+      - "8080:8080"
+    volumes:
+      - ./target_server/app:/opt/gsan/app
+      - ./target_server/backups:/opt/gsan/backups
+
+# ADICIONE ESTAS LINHAS ABAIXO:
+volumes:
+  postgres_data:

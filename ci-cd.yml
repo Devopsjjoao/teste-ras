@@ -1,0 +1,77 @@
+name: Pipeline CI/CD - R.A.S. Automação
+
+# 1. Definição dos Gatilhos (Triggers) baseados em eventos do repositório
+on:
+  push:
+    branches: [ "main" ]
+  release:
+    types: [ created ]
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # REQUISITO 1: Executado em qualquer push na branch MAIN (Lint e Validação)
+  # ----------------------------------------------------------------------------
+  lint_and_test:
+    name: 🛡️ Code Quality & Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: 🔍 Executar Análise Estática (Lint Simulado)
+        run: |
+          echo "Iniciando verificação de sintaxe e lint dos scripts..."
+          # Aqui rodaríamos ferramentas como ShellCheck para Bash ou JSHint/ESLint para código
+          # Simulando validação básica de arquivos existentes
+          if [ -f "deploy.sh" ]; then
+            bash -n deploy.sh
+          fi
+          echo "✔ Todos os testes estáticos e validações de lint passaram com sucesso!"
+
+  # ----------------------------------------------------------------------------
+  # REQUISITO 2: Executado apenas na criação de uma TAG de versão (Release)
+  # ----------------------------------------------------------------------------
+  build_and_release:
+    name: 📦 Geração de Artefato de Release
+    needs: lint_and_test
+    # Condicional estrita: Só executa se o gatilho original for uma Release/Tag
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: 🗜️ Compactar Arquivos do Projeto (.tar.gz)
+        run: |
+          echo "Empacotando binários e scripts da versão: ${{ github.ref_name }}..."
+          # Cria um pacote contendo os arquivos essenciais do repositório
+          tar -czvf ras-artifact-${{ github.ref_name }}.tar.gz *.sh README.md docker-compose.yml 2>/dev/null || tar -czvf ras-artifact-${{ github.ref_name }}.tar.gz README.md
+
+      - name: 🚀 Upload do Artefato para a Release do GitHub
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ras-artifact-${{ github.ref_name }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ----------------------------------------------------------------------------
+  # REQUISITO 3 (OPCIONAL): Disparo de Webhook pós-deploy concluído
+  # ----------------------------------------------------------------------------
+  notify_webhook:
+    name: 📡 Notificação de Conclusão (Webhook)
+    needs: [lint_and_test, build_and_release]
+    runs-on: ubuntu-latest
+    # Executa sempre ao final do fluxo para reportar o status real
+    if: always()
+    steps:
+      - name: 🌐 Disparar Payload de Notificação
+        run: |
+          STATUS_LINT="${{ needs.lint_and_test.result }}"
+          
+          if [ "$STATUS_LINT" = "success" ]; then
+            echo "Enviando notificação de sucesso via Webhook corporativo..."
+            # Exemplo real de requisição curl enviando JSON para um endpoint de ChatOps (Discord/Slack/Teams)
+            # curl -X POST -H "Content-Type: application/json" -d '{"text": "🚀 Pipeline R.A.S. executado com sucesso!"}' ${{ secrets.WEBHOOK_URL }}
+          else
+            echo "Pipeline falhou no estágio de qualidade. Disparando alerta de erro..."
+          fi

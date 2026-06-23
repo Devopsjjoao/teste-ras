@@ -54,24 +54,48 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ----------------------------------------------------------------------------
-  # REQUISITO 3 (OPCIONAL): Disparo de Webhook pós-deploy concluído
+# ----------------------------------------------------------------------------
+  # REQUISITO 3: Disparo de Webhook Real no Discord pós-pipeline
   # ----------------------------------------------------------------------------
   notify_webhook:
-    name: 📡 Notificação de Conclusão (Webhook)
+    name: 📡 Notificação de Conclusão (Discord)
     needs: [lint_and_test, build_and_release]
     runs-on: ubuntu-latest
-    # Executa sempre ao final do fluxo para reportar o status real
-    if: always()
+    if: always() # Garante que roda mesmo se o lint ou o build falharem
     steps:
-      - name: 🌐 Disparar Payload de Notificação
+      - name: 📡 Enviar Alerta para o Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          # Captura o resultado dos passos anteriores
           STATUS_LINT="${{ needs.lint_and_test.result }}"
+          STATUS_RELEASE="${{ needs.build_and_release.result }}"
           
-          if [ "$STATUS_LINT" = "success" ]; then
-            echo "Enviando notificação de sucesso via Webhook corporativo..."
-            # Exemplo real de requisição curl enviando JSON para um endpoint de ChatOps (Discord/Slack/Teams)
-            # curl -X POST -H "Content-Type: application/json" -d '{"text": "🚀 Pipeline R.A.S. executado com sucesso!"}' ${{ secrets.WEBHOOK_URL }}
+          # Se o lint passou e o release passou (ou foi pulado por não ser tag), é SUCESSO
+          if [ "$STATUS_LINT" = "success" ] && [ "$STATUS_RELEASE" != "failure" ]; then
+            COLOR=65280 # Verde em formato Decimal
+            TITLE="🚀 Pipeline RAS - Sucesso!"
+            DESC="O pipeline foi executado com sucesso na branch \`main\`.\n\n**Lint/QA:** ✔ Passou\n**Release:** ${{ needs.build_and_release.result || 'Ignorado (Não é Tag)' }}"
           else
-            echo "Pipeline falhou no estágio de qualidade. Disparando alerta de erro..."
+            COLOR=16711680 # Vermelho em formato Decimal
+            TITLE="❌ Pipeline RAS - Falhou!"
+            DESC="Ocorreu um erro durante a execução da esteira automatizada.\n\nVerifique os logs no GitHub Actions imediatamente."
           fi
+
+          # Monta o JSON formatado em Embed para o Discord ficar bonito
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "$TITLE",
+              "description": "$DESC",
+              "color": $COLOR,
+              "footer": {
+                "text": "Repositório: ${{ github.repository }} | Ator: ${{ github.actor }}"
+              }
+            }]
+          }
+          EOF
+          )
+
+          # Dispara o curl para o Discord
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK"
